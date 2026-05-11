@@ -6,7 +6,7 @@
 [![Go version](https://img.shields.io/github/go-mod/go-version/selfshop-dev/lib-logger)](go.mod)
 [![License](https://img.shields.io/github/license/selfshop-dev/lib-logger)](LICENSE)
 
-Dual-core zap-логгер с runtime-управлением уровнем, инжекцией полей из контекста и встроенным сэмплингом. Проект организации [selfshop-dev](https://github.com/selfshop-dev).
+Dual-core zap logger with runtime level control, context field injection, and built-in sampling. A project by [selfshop-dev](https://github.com/selfshop-dev).
 
 ### Installation
 
@@ -16,7 +16,7 @@ go get -u github.com/selfshop-dev/lib-logger
 
 ## Overview
 
-`lib-logger` оборачивает два [go.uber.org/zap](https://github.com/uber-go/zap) core, подключённых через `zapcore.NewTee`. Сэмплированный core обрабатывает высокочастотные сообщения ниже порогового уровня; критический core никогда не сэмплируется и доступен напрямую через `Unsampled()` для аудит-логов. Все `With*`-методы возвращают новые экземпляры — ресивер никогда не мутируется.
+`lib-logger` wraps two [go.uber.org/zap](https://github.com/uber-go/zap) cores connected via `zapcore.NewTee`. The sampled core handles high-frequency messages below the threshold level; the critical core is never sampled and is accessible directly via `Unsampled()` for audit logs. All `With*` methods return new instances — the receiver is never mutated.
 
 ```go
 cfg := logger.DefaultConfig()
@@ -33,7 +33,7 @@ defer l.Sync()
 l.Info("service started")
 ```
 
-### Быстрый старт
+### Quick Start
 
 ```go
 import logger "github.com/selfshop-dev/lib-logger"
@@ -49,7 +49,7 @@ l.Info("ready", zap.String("port", "8080"))
 
 ## Config
 
-`DefaultConfig` возвращает безопасные production-дефолты: порог `InfoLevel`, сэмплер 100/100, sink — `os.Stdout`. Переопределяй только то, что отличается.
+`DefaultConfig` returns safe production defaults: threshold `InfoLevel`, sampler 100/100, sink — `os.Stdout`. Override only what differs.
 
 ```go
 cfg := logger.DefaultConfig()
@@ -62,11 +62,11 @@ cfg.SamplerThereafter = 50
 cfg.Development       = false
 ```
 
-Глобальные поля `service`, `version`, `env` и поля из `InitialFields` добавляются к каждой записи автоматически.
+Global fields `service`, `version`, `env` and fields from `InitialFields` are added to every log entry automatically.
 
-## Полная от контекста
+## Context Enrichment
 
-`WithContext` обогащает логгер полями, извлечёнными из контекста через один или несколько `FieldExtractor`. Вызывай в начале каждого обработчика запроса.
+`WithContext` enriches the logger with fields extracted from the context via one or more `FieldExtractor` instances. Call it at the beginning of each request handler.
 
 ```go
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -75,13 +75,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-`MergeExtractors` объединяет несколько экстракторов в один:
+`MergeExtractors` combines multiple extractors into one:
 
 ```go
 ex := logger.MergeExtractors(extractors.Tracing(), extractors.UserID())
 ```
 
-Собственный экстрактор реализуется через `FieldExtractFunc`:
+A custom extractor is implemented via `FieldExtractFunc`:
 
 ```go
 ex := logger.FieldExtractFunc(func(ctx context.Context) []zap.Field {
@@ -91,24 +91,24 @@ ex := logger.FieldExtractFunc(func(ctx context.Context) []zap.Field {
 
 ## extractors
 
-Субпакет `extractors` предоставляет готовые экстракторы для стандартных полей запроса.
+The `extractors` subpackage provides ready-to-use extractors for standard request fields.
 
 ```go
 import "github.com/selfshop-dev/lib-logger/extractors"
 
-// Записать в контекст
+// Write to context
 ctx = extractors.WithTraceID(ctx, "trace-abc")
 ctx = extractors.WithUserID(ctx, "usr-1")
 
-// Извлечь при логировании
+// Extract when logging
 log := l.WithContext(ctx, extractors.Full())
 ```
 
-Доступные экстракторы: `TraceID()`, `SpanID()`, `RequestID()`, `CorrelationID()`, `UserID()`, `TenantID()`. Комбинированные: `Tracing()` (trace + span), `Full()` (все шесть полей). Если ключ отсутствует или пуст в контексте — поле молча пропускается.
+Available extractors: `TraceID()`, `SpanID()`, `RequestID()`, `CorrelationID()`, `UserID()`, `TenantID()`. Combined: `Tracing()` (trace + span), `Full()` (all six fields). If a key is missing or empty in the context, the field is silently skipped.
 
 ## Unsampled
 
-`Unsampled()` возвращает underlying критический `*zap.Logger` напрямую. Используй для аудит-логов, событий безопасности и любых сообщений, которые никогда не должны быть отброшены сэмплером.
+`Unsampled()` returns the underlying critical `*zap.Logger` directly. Use it for audit logs, security events, and any messages that must never be dropped by the sampler.
 
 ```go
 l.Unsampled().Warn("user password changed",
@@ -117,16 +117,16 @@ l.Unsampled().Warn("user password changed",
 )
 ```
 
-`With`, `Named` и `WithContext` на derived-логгере propagate оба core, поэтому `Unsampled()` на дочернем логгере несёт те же поля:
+`With`, `Named`, and `WithContext` on a derived logger propagate both cores, so `Unsampled()` on a child logger carries the same fields:
 
 ```go
 child := l.With(zap.String("request_id", id))
-child.Unsampled().Warn("audit event") // содержит request_id
+child.Unsampled().Warn("audit event") // contains request_id
 ```
 
-## Runtime level
+## Runtime Level
 
-`LevelManager` оборачивает `zap.AtomicLevel` и позволяет менять порог логирования без перезапуска. Зарегистрируй `LevelHandler` в роутере для GET/PUT эндпоинта:
+`LevelManager` wraps `zap.AtomicLevel` and allows changing the log threshold without a restart. Register `LevelHandler` in your router for a GET/PUT endpoint:
 
 ```go
 mux.Handle("/log/level", logger.LevelHandler(l.Level, l.Unsampled()))
@@ -135,8 +135,8 @@ mux.Handle("/log/level", logger.LevelHandler(l.Level, l.Unsampled()))
 // PUT /log/level  body: {"level":"debug"} → {"level":"debug"}
 ```
 
-Unsampled-логгер передаётся в `LevelHandler`, чтобы предупреждение об изменении уровня никогда не попало под сэмплер.
+The unsampled logger is passed to `LevelHandler` so that the level-change warning is never subject to sampling.
 
-## Лицензия
+## License
 
 [`MIT`](LICENSE) © 2026-present [`selfshop-dev`](https://github.com/selfshop-dev)
